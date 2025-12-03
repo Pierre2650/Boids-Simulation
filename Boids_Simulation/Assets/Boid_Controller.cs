@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class Boid_Controller : MonoBehaviour
 {
@@ -10,6 +11,10 @@ public class Boid_Controller : MonoBehaviour
     public float speed = 1;
     public bool isObstacle = false;
 
+    [Header("repulsion")]
+    public float minDistance;
+    public float scalaireRepulsion = 2f;
+
     public List<GameObject> otherBoids = new List<GameObject>();
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -17,21 +22,34 @@ public class Boid_Controller : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         sphC = GetComponent<SphereCollider>();
-
-        do
-        {
-            float x = Random.Range(0, 2);
-            float z = Random.Range(0, 2);
-
-            velocity = new Vector3(x, 0, z);
-
-        } while (velocity == Vector3.zero);
+        otherBoids = new List<GameObject>();
+        velocity = randDir();
+        rb.linearVelocity = velocity;
     }
 
+    private Vector3 randDir()
+    {
+        Vector3 result = Vector3.zero;
+        do
+        {
+            float x = Random.Range(-1, 1f);
+            float z = Random.Range(-1, 1f);
+
+            result = new Vector3(x, 0, z);
+
+        } while (result == Vector3.zero);
+        //Debug.Log("Result =" + result);
+
+        return result;
+
+    }
 
     private void FixedUpdate()
     {
-        rb.AddForce(velocity.normalized * speed);
+        //Vector3 dir = velocity + repulsion() + attraction() + alignement();
+        Vector3 dir = rb.linearVelocity + (repulsion() * scalaireRepulsion) + attraction() + alignement();
+        rb.AddForce(dir.normalized * speed);
+
     }
     // Update is called once per frame
     void Update()
@@ -40,53 +58,81 @@ public class Boid_Controller : MonoBehaviour
 
     }
 
-    private void LateUpdate()
+
+    private Vector3 repulsion()
     {
-        maxZone();
+
+        Vector3 averageDir = Vector3.zero;
+        float nbBoids = 0;
+        foreach (GameObject boid in otherBoids)
+        {
+            if(Vector3.Distance(transform.position , boid.transform.position) < minDistance)
+            {
+                averageDir +=  transform.position - boid.transform.position ;
+                nbBoids++;
+            }
+        }
+
+
+        if (nbBoids != 0)
+        {
+            averageDir /= nbBoids;
+        }
+
+        return averageDir;
+
     }
 
-    private void repulsion()
+    private Vector3 alignement()
     {
+        Vector3 averageDir = Vector3.zero;
+        float nbBoids = 0;
+        foreach (GameObject boid in otherBoids) {
+            averageDir += boid.GetComponent<Rigidbody>().linearVelocity;
+            //averageDir += boid.GetComponent<Boid_Controller>().velocity;
+            nbBoids++;
+        }
+
+
+        if (nbBoids != 0) 
+        {
+            averageDir /= nbBoids;
+        }
+
+            return averageDir;
 
     }
 
-    private void alignement()
+    private Vector3 attraction()
     {
+        Vector3 averageDir = Vector3.zero;
+        float nbBoids = 0;
+        foreach (GameObject boid in otherBoids)
+        {
+            //averageDir += transform.position - boid.transform.position;
+            averageDir +=  boid.transform.position;
+            nbBoids++;
+        }
 
-    }
+        if (nbBoids != 0)
+        {
+            averageDir /= nbBoids;
+            averageDir -= transform.position;
+        }
 
-    private void attraction()
-    {
+
+        return averageDir;
 
     }
 
   
 
-    private void maxZone()
+
+    private void OnCollisionEnter(Collision collision)
     {
-        // DEBUG ONLY
-        if (transform.position.x > 36)
-        {
+        Debug.Log("collide");
+        Vector3 normal = collision.GetContact(0).normal;
+        rb.linearVelocity = Vector3.Reflect(rb.linearVelocity, normal);
 
-            transform.position = new Vector3(35, transform.position.y, transform.position.z);
-            velocity.x *= -1;
-        }
-        else if (transform.position.x < -36)
-        {
-            transform.position = new Vector3(-35, transform.position.y, transform.position.z);
-            velocity.x *= -1;
-        }
-
-        if (transform.position.z > 36)
-        {
-            transform.position = new Vector3(transform.position.x, transform.position.y, 35);
-            velocity.z *= -1;
-        }
-        else if (transform.position.z < -36)
-        {
-            transform.position = new Vector3(transform.position.x, transform.position.y, -35);
-            velocity.z *= -1;
-        }
- 
     }
 }
