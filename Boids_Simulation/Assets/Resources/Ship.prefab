@@ -154,10 +154,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 50c065e683958c3419ea2384677387fd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  speed: 200
+  controller: {fileID: 0}
+  maxX: 70
+  maxZ: 70
   isObstacle: 0
-  minDistance: 5
-  separationWeight: 10
+  speed: 400
+  stop: 1
+  velocity: {x: 0, y: 0, z: 0}
+  hasRepulsion: 1
+  minDistance: 8.5
+  scalaireRepulsion: 5
+  hasAlignement: 1
+  scalaireAlignement: 1
+  hasAttraction: 1
+  scalaireAttraction: 1
   otherBoids: []
 --- !u!1 &2797126281641803711
 GameObject:

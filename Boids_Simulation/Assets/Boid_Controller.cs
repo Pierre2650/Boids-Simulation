@@ -1,19 +1,34 @@
-using NUnit.Framework;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UIElements;
+using UnityEngine.InputSystem.XR;
 
 public class Boid_Controller : MonoBehaviour
 {
     private Rigidbody rb;
-    private SphereCollider sphC;
-    private Vector3 velocity = Vector3.zero;
-    public float speed = 1;
+
+    [Header("Position")]
+    public Player_Controller controller;
+    public float maxX, maxZ;
     public bool isObstacle = false;
 
-    [Header("repulsion")]
+    [Header("Mouvement")]
+    public float speed = 1;
+    public bool stop = true;
+    public Vector3 velocity = Vector3.zero;
+
+
+    [Header("Repulsion")]
+    public bool hasRepulsion = true;
     public float minDistance;
     public float scalaireRepulsion = 2f;
+
+    [Header("Alignement")]
+    public bool hasAlignement = true;
+    public float scalaireAlignement = 1f;
+
+    [Header("Attraction")]
+    public bool hasAttraction = true;
+    public float scalaireAttraction = 1f;
 
     public List<GameObject> otherBoids = new List<GameObject>();
 
@@ -21,10 +36,9 @@ public class Boid_Controller : MonoBehaviour
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-        sphC = GetComponent<SphereCollider>();
         otherBoids = new List<GameObject>();
-        velocity = randDir();
-        rb.linearVelocity = velocity;
+        //velocity = randDir();
+        //rb.linearVelocity = velocity;
     }
 
     private Vector3 randDir()
@@ -46,18 +60,80 @@ public class Boid_Controller : MonoBehaviour
 
     private void FixedUpdate()
     {
-        //Vector3 dir = velocity + repulsion() + attraction() + alignement();
-        Vector3 dir = rb.linearVelocity + (repulsion() * scalaireRepulsion) + attraction() + alignement();
+        Vector3 dir = velocity;
+        if (hasRepulsion) { dir += (repulsion() * scalaireRepulsion); }
+        if (hasAlignement) { dir += (alignement() * scalaireAlignement) ; }
+        if (hasAttraction) { dir += (attraction() * scalaireAttraction ) ; }
+
+       // Vector3 dir = rb.linearVelocity + (repulsion() * scalaireRepulsion) + (attraction() * scalaireAttraction) + (alignement() * scalaireAlignement);
         rb.AddForce(dir.normalized * speed);
 
     }
     // Update is called once per frame
     void Update()
     {
-        //maxZone();
+        debugPos();
 
+        if (stop)
+        {
+            stayAtPosition();
+            stop = false;
+        }
+
+
+
+        if (controller.positionToGo != Vector3.zero)
+        {
+            goToPosition();
+
+            Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
+            Debug.Log("Vector3.Distance(transform.position, controller.positionToGo) = " + Vector3.Distance(transform.position, pos));
+            
+            if(Vector3.Distance(transform.position, pos) < 0.5f)
+            {
+                controller.positionToGo = Vector3.zero;
+                stop = true;
+                tellOthersToStop();
+            }
+            //tellOthersToMove();
+
+        }
+
+        
     }
 
+    private void tellOthersToMove()
+    {
+        foreach (GameObject boid in otherBoids)
+        {
+            boid.GetComponent<Boid_Controller>().goToPosition();
+        }
+    }
+
+    public void goToPosition()
+    {
+        //if (!hasAlignement) { hasAlignement = true; }
+        //if (!hasAttraction) { hasAttraction = true; }
+
+        Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
+        velocity = (pos - transform.position).normalized;
+
+    }
+    private void tellOthersToStop()
+    {
+        foreach (GameObject boid in otherBoids) {
+            boid.GetComponent<Boid_Controller>().stayAtPosition();
+        }
+    }
+    public void stayAtPosition()
+    {
+        if (hasAlignement) { hasAlignement = false;  }
+        if (hasAttraction) { hasAttraction = false; }
+
+        velocity = Vector3.zero;
+        rb.angularVelocity = velocity;
+
+    }
 
     private Vector3 repulsion()
     {
@@ -89,7 +165,6 @@ public class Boid_Controller : MonoBehaviour
         float nbBoids = 0;
         foreach (GameObject boid in otherBoids) {
             averageDir += boid.GetComponent<Rigidbody>().linearVelocity;
-            //averageDir += boid.GetComponent<Boid_Controller>().velocity;
             nbBoids++;
         }
 
@@ -109,15 +184,14 @@ public class Boid_Controller : MonoBehaviour
         float nbBoids = 0;
         foreach (GameObject boid in otherBoids)
         {
-            //averageDir += transform.position - boid.transform.position;
             averageDir +=  boid.transform.position;
             nbBoids++;
         }
 
         if (nbBoids != 0)
         {
-            averageDir /= nbBoids;
-            averageDir -= transform.position;
+           averageDir /= nbBoids;
+           averageDir -= transform.position;
         }
 
 
@@ -126,7 +200,34 @@ public class Boid_Controller : MonoBehaviour
     }
 
   
+    private void debugPos()
+    {
+        if (transform.position.x > maxX)
+        {
+            transform.position = new Vector3(-(transform.position.x - 5),transform.position.y,transform.position.z);
+            rb.linearVelocity = Vector3.zero;
+        }
 
+        if (transform.position.x < -maxX)
+        {
+            transform.position = new Vector3(-(transform.position.x + 5), transform.position.y, transform.position.z);
+            rb.linearVelocity = Vector3.zero;
+        }
+
+        if (transform.position.z > maxZ)
+        {
+            transform.position = new Vector3(transform.position.x, transform.position.y, -(transform.position.z - 5));
+            rb.linearVelocity = Vector3.zero;
+        }
+
+
+        if (transform.position.z < -maxZ)
+        {
+            transform.position = new Vector3(transform.position.x, transform.position.y, -(transform.position.z + 5));
+            rb.linearVelocity = Vector3.zero;
+        }
+
+    }
 
     private void OnCollisionEnter(Collision collision)
     {
