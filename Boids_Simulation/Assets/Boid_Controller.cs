@@ -1,10 +1,23 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem.XR;
+using Random = UnityEngine.Random;
 
 public class Boid_Controller : MonoBehaviour
 {
     private Rigidbody rb;
+    public enum States
+    {
+        Static,
+        ToPosition,
+        Patrol,
+        Attack
+    }
+
+
+    [Header("State Machine")]
+    public States currentState;
 
     [Header("Position")]
     public Player_Controller controller;
@@ -37,8 +50,8 @@ public class Boid_Controller : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         otherBoids = new List<GameObject>();
+        stayAtPosition();
         //velocity = randDir();
-        //rb.linearVelocity = velocity;
     }
 
     private Vector3 randDir()
@@ -52,7 +65,6 @@ public class Boid_Controller : MonoBehaviour
             result = new Vector3(x, 0, z);
 
         } while (result == Vector3.zero);
-        //Debug.Log("Result =" + result);
 
         return result;
 
@@ -72,34 +84,55 @@ public class Boid_Controller : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+
         debugPos();
 
-        if (stop)
-        {
-            stayAtPosition();
-            stop = false;
-        }
+        //return;
 
+        if (Enum.Equals(currentState, States.ToPosition)){
 
-
-        if (controller.positionToGo != Vector3.zero)
-        {
             goToPosition();
 
             Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
-            Debug.Log("Vector3.Distance(transform.position, controller.positionToGo) = " + Vector3.Distance(transform.position, pos));
-            
-            if(Vector3.Distance(transform.position, pos) < 0.5f)
+
+            if (Vector3.Distance(transform.position, pos) < 0.5f)
             {
-                controller.positionToGo = Vector3.zero;
-                stop = true;
-                tellOthersToStop();
+                ChangeState(States.Static);
+                //tellOthersToStop();
             }
-            //tellOthersToMove();
 
         }
 
+        if (controller.positionToGo != Vector3.zero  && !Enum.Equals(currentState, States.ToPosition))
+        {
+            ChangeState(States.ToPosition);
+        }
+
         
+    }
+
+    public void ChangeState(States newState)
+    {
+        currentState = newState;
+        switch (newState)
+        {
+            case States.Static:
+                controller.positionToGo = Vector3.zero;
+                stayAtPosition();
+                minDistance = 4f;
+                break;
+            case States.ToPosition:
+                minDistance = 2f;
+
+
+                break;
+            case States.Patrol:
+                break;
+            case States.Attack:
+                break;
+            default:
+                break;
+        }
     }
 
     private void tellOthersToMove()
@@ -122,10 +155,15 @@ public class Boid_Controller : MonoBehaviour
     private void tellOthersToStop()
     {
         foreach (GameObject boid in otherBoids) {
-            boid.GetComponent<Boid_Controller>().stayAtPosition();
+            Boid_Controller temp = boid.GetComponent<Boid_Controller>();
+           if (temp.currentState != States.Static)
+            {
+                temp.ChangeState(States.Static);
+            }
+                
         }
     }
-    public void stayAtPosition()
+    private void stayAtPosition()
     {
         if (hasAlignement) { hasAlignement = false;  }
         if (hasAttraction) { hasAttraction = false; }
