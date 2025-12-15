@@ -19,6 +19,14 @@ public class Boid_Controller : MonoBehaviour
     [Header("State Machine")]
     public States currentState;
 
+    [Header("ToPosition")]
+    public Vector3 positionToGo = Vector3.zero;
+    public Vector3 boidSignalPos = Vector3.zero;
+    public bool signalRecieved = false;
+
+    [Header("Attack")]
+    private Vector3 P0 , P1, P2 ;
+
     [Header("Position")]
     public Player_Controller controller;
     public float maxX, maxZ;
@@ -44,6 +52,7 @@ public class Boid_Controller : MonoBehaviour
     public float scalaireAttraction = 1f;
 
     public List<GameObject> otherBoids = new List<GameObject>();
+
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -93,19 +102,47 @@ public class Boid_Controller : MonoBehaviour
 
             goToPosition();
 
-            Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
-
-            if (Vector3.Distance(transform.position, pos) < 0.5f)
+            if (signalRecieved)
             {
-                ChangeState(States.Static);
-                //tellOthersToStop();
+                //Debug.Log("Vector3.Distance(transform.position, boidSignalPos) = " + Vector3.Distance(transform.position, boidSignalPos));
+
+                if (Vector3.Distance(transform.position, boidSignalPos) < 1.5f)
+                {
+                    Debug.Log("Static signalRecieved");
+                    signalRecieved = false;
+                    ChangeState(States.Static);
+                    controller.tellOthersToStop(gameObject);
+                }
+
             }
+            else
+            {
+
+              
+                if (Vector3.Distance(transform.position, positionToGo) < 0.5f)
+                {
+                    Debug.Log("Static");
+                    ChangeState(States.Static);
+                    controller.tellOthersToStop(gameObject);
+                }
+
+            }
+
+           
 
         }
 
-        if (controller.positionToGo != Vector3.zero  && !Enum.Equals(currentState, States.ToPosition))
+
+
+
+        /*if (controller.positionToGo != Vector3.zero  && !Enum.Equals(currentState, States.ToPosition))
         {
             ChangeState(States.ToPosition);
+        }*/
+
+        if (Input.GetKeyDown(KeyCode.T)) {
+            Debug.Log("pressed");
+            ChangeState(States.Patrol);
         }
 
         
@@ -113,26 +150,43 @@ public class Boid_Controller : MonoBehaviour
 
     public void ChangeState(States newState)
     {
-        currentState = newState;
+        
         switch (newState)
         {
             case States.Static:
-                controller.positionToGo = Vector3.zero;
+                //controller.positionToGo = Vector3.zero;
+
                 stayAtPosition();
                 minDistance = 4f;
                 break;
             case States.ToPosition:
+                signalRecieved = false;
                 minDistance = 2f;
 
 
                 break;
             case States.Patrol:
+                rb.angularVelocity = Vector3.zero;
+                minDistance = 4f;
+                patrol();
                 break;
             case States.Attack:
+
                 break;
             default:
                 break;
         }
+
+        currentState = newState;
+
+    }
+
+
+
+    public void stopSignal(Vector3 pos)
+    {
+        boidSignalPos = pos;
+        signalRecieved = true;
     }
 
     private void tellOthersToMove()
@@ -148,21 +202,12 @@ public class Boid_Controller : MonoBehaviour
         //if (!hasAlignement) { hasAlignement = true; }
         //if (!hasAttraction) { hasAttraction = true; }
 
-        Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
-        velocity = (pos - transform.position).normalized;
+        //Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
+
+        velocity = (positionToGo - transform.position).normalized;
 
     }
-    private void tellOthersToStop()
-    {
-        foreach (GameObject boid in otherBoids) {
-            Boid_Controller temp = boid.GetComponent<Boid_Controller>();
-           if (temp.currentState != States.Static)
-            {
-                temp.ChangeState(States.Static);
-            }
-                
-        }
-    }
+    
     private void stayAtPosition()
     {
         if (hasAlignement) { hasAlignement = false;  }
@@ -173,6 +218,14 @@ public class Boid_Controller : MonoBehaviour
 
     }
 
+    private void patrol()
+    {
+        if (!hasAlignement) { hasAlignement = true; }
+        if (!hasAttraction) { hasAttraction = true; }
+        if(!hasRepulsion) { hasRepulsion = true; }
+        velocity = randDir();
+
+    }
     private Vector3 repulsion()
     {
 
@@ -273,5 +326,12 @@ public class Boid_Controller : MonoBehaviour
         Vector3 normal = collision.GetContact(0).normal;
         rb.linearVelocity = Vector3.Reflect(rb.linearVelocity, normal);
 
+    }
+
+    private void OnDrawGizmos()
+    {
+        // Draw a yellow sphere at the transform's position
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawSphere(boidSignalPos, 1f);
     }
 }

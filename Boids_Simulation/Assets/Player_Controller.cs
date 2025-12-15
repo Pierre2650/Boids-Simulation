@@ -1,5 +1,8 @@
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.XR;
+using static UnityEditor.PlayerSettings;
 
 public class Player_Controller : MonoBehaviour
 {
@@ -15,6 +18,8 @@ public class Player_Controller : MonoBehaviour
     public Vector3 positionToGo = Vector3.zero;
     public LayerMask Terrain;
 
+    [Header("Boids")]
+    public GameObject[] allBoids;
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -65,10 +70,37 @@ public class Player_Controller : MonoBehaviour
     {
         if (context.performed)
         {
-            positionToGo =  getMouseGamePosition();
+            Vector3 pos =  getMouseGamePosition();
+            foreach (GameObject go in allBoids) {
+                go.GetComponent<Boid_Controller>().positionToGo  = new Vector3(pos.x, 0, pos.z); 
+                go.GetComponent<Boid_Controller>().ChangeState(Boid_Controller.States.ToPosition);
+            }
         }
     }
 
+
+    public void tellOthersToStop(GameObject caller)
+    {
+        foreach (GameObject boid in allBoids)
+        {
+            if (GameObject.ReferenceEquals(boid, caller)) { continue; }
+
+            Boid_Controller temp = boid.GetComponent<Boid_Controller>();
+
+            if (Vector3.Distance(boid.transform.position, caller.transform.position) < 1.5f) {
+                Debug.Log("caller told other to static");
+                temp.ChangeState(Boid_Controller.States.Static);
+                continue;
+            }
+            else
+            {
+                if (temp.signalRecieved) { continue; }
+                Debug.Log("caller told other to stopSignal");
+                temp.stopSignal(caller.transform.position);
+            }
+
+        }
+    }
     private Vector3 getMouseGamePosition()
     {
         Camera camera = Camera.main;
