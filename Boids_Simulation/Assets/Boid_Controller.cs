@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.XR;
 using Random = UnityEngine.Random;
 
@@ -24,8 +26,20 @@ public class Boid_Controller : MonoBehaviour
     public Vector3 boidSignalPos = Vector3.zero;
     public bool signalRecieved = false;
 
+    [Header("Patrol")]
+    public float changeDirDuration = 5f;
+    private float changeDirElasped = 6f;
+    private Coroutine patrolC = null;
+
     [Header("Attack")]
+    private Vector3 positionToAttack = Vector3.zero;
+    private Vector3 tempDir = Vector3.zero;
     private Vector3 P0 , P1, P2 ;
+    private float t = 0;
+    public float berzierSpeed = 0.5f;
+    private bool berzierMouv = false;
+    private Coroutine waitToattackC = null;
+    private Coroutine waitToCurvedC = null;
 
     [Header("Position")]
     public Player_Controller controller;
@@ -35,6 +49,7 @@ public class Boid_Controller : MonoBehaviour
     [Header("Mouvement")]
     public float speed = 1;
     public bool stop = true;
+    
     public Vector3 velocity = Vector3.zero;
 
 
@@ -52,6 +67,7 @@ public class Boid_Controller : MonoBehaviour
     public float scalaireAttraction = 1f;
 
     public List<GameObject> otherBoids = new List<GameObject>();
+    private bool goToTargetAgain;
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -59,8 +75,21 @@ public class Boid_Controller : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         otherBoids = new List<GameObject>();
-        stayAtPosition();
-        //velocity = randDir();
+
+        if (isObstacle)
+        {
+            hasRepulsion = true;
+            hasAlignement = false;
+            hasAttraction = false;
+            scalaireRepulsion = 8.5f;
+        }
+        else
+        {
+            stayAtPosition();
+        }
+
+
+ 
     }
 
     private Vector3 randDir()
@@ -81,97 +110,211 @@ public class Boid_Controller : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (isObstacle)
+        {
+            return;
+        }
+
+
+        if (berzierMouv && waitToattackC == null)
+        {
+            return;    
+        }
+
         Vector3 dir = velocity;
         if (hasRepulsion) { dir += (repulsion() * scalaireRepulsion); }
         if (hasAlignement) { dir += (alignement() * scalaireAlignement) ; }
         if (hasAttraction) { dir += (attraction() * scalaireAttraction ) ; }
 
-       // Vector3 dir = rb.linearVelocity + (repulsion() * scalaireRepulsion) + (attraction() * scalaireAttraction) + (alignement() * scalaireAlignement);
         rb.AddForce(dir.normalized * speed);
 
     }
     // Update is called once per frame
     void Update()
     {
+        if (isObstacle)
+        {
+            return;
+        }
+
 
         debugPos();
 
         //return;
 
-        if (Enum.Equals(currentState, States.ToPosition)){
+        Vector3 dirToLook = transform.position + velocity;
+        transform.LookAt(dirToLook);
 
-            goToPosition();
-
-            if (signalRecieved)
-            {
-                //Debug.Log("Vector3.Distance(transform.position, boidSignalPos) = " + Vector3.Distance(transform.position, boidSignalPos));
-
-                if (Vector3.Distance(transform.position, boidSignalPos) < 1.5f)
-                {
-                    Debug.Log("Static signalRecieved");
-                    signalRecieved = false;
-                    ChangeState(States.Static);
-                    controller.tellOthersToStop(gameObject);
-                }
-
-            }
-            else
-            {
-
-              
-                if (Vector3.Distance(transform.position, positionToGo) < 0.5f)
-                {
-                    Debug.Log("Static");
-                    ChangeState(States.Static);
-                    controller.tellOthersToStop(gameObject);
-                }
-
-            }
-
-           
-
-        }
-
-
-
-
-        /*if (controller.positionToGo != Vector3.zero  && !Enum.Equals(currentState, States.ToPosition))
-        {
-            ChangeState(States.ToPosition);
-        }*/
+        stateMachine();
 
         if (Input.GetKeyDown(KeyCode.T)) {
-            Debug.Log("pressed");
+            Debug.Log("pressed T");
             ChangeState(States.Patrol);
         }
 
-        
+        if (Input.GetKeyDown(KeyCode.Y))
+        {
+            
+            Debug.Log("pressed Y");
+            ChangeState(States.Attack);
+        }
+
+
     }
+
+
+    private void stateMachine()
+    {
+        
+        switch (currentState)
+        {
+            case States.ToPosition:
+
+                goToPosition();
+
+                if (signalRecieved)
+                {
+                    //Debug.Log("Vector3.Distance(transform.position, boidSignalPos) = " + Vector3.Distance(transform.position, boidSignalPos));
+
+                    if (Vector3.Distance(transform.position, boidSignalPos) < 1.5f)
+                    {
+                        Debug.Log("Static signalRecieved");
+                        signalRecieved = false;
+                        ChangeState(States.Static);
+                        controller.tellOthersToStop(gameObject);
+                    }
+
+                }
+                else
+                {
+
+
+                    if (Vector3.Distance(transform.position, positionToGo) < 0.5f)
+                    {
+                        Debug.Log("Static");
+                        ChangeState(States.Static);
+                        controller.tellOthersToStop(gameObject);
+                    }
+
+                }
+
+
+                break;
+            case States.Patrol:
+
+                if (patrolC != null) { return; }
+
+                changeDirElasped += Time.deltaTime;
+                if(changeDirElasped > changeDirDuration)
+                {
+                    Debug.Log("Change direction");
+                    if (hasAlignement) { hasAlignement = false; }
+                    if (hasAttraction) { hasAttraction = false; }
+                    if (hasRepulsion) { hasRepulsion = false; }
+
+                    velocity = randDir();
+                    patrolC = StartCoroutine(waitToActivatePatrol());
+                }
+
+                break;
+            case States.Attack:
+
+                //Debug.Log("distance = "+Vector3.Distance(transform.position, positionToAttack));
+
+                if (berzierMouv)
+                {
+                    if (t < 1f)
+                    {
+                        transform.position = P1 + Mathf.Pow((1 - t), 2) * (P0 - P1) + Mathf.Pow(t, 2) * (P2 - P1);
+
+                        t = t + berzierSpeed * Time.deltaTime;
+
+                        if( t>0.5f && t < 0.6f)
+                        {
+                           tempDir = (P2 - transform.position).normalized;
+                        }
+
+                    }
+                    else
+                    {
+                        if(waitToattackC == null)
+                        {
+                            velocity = tempDir;
+                            rb.linearVelocity = velocity * 50f;
+                            waitToattackC = StartCoroutine(waitToattack());
+                        }
+                        
+                    }
+
+                }
+                else
+                {
+                    if (waitToCurvedC != null)
+                    {
+                        return;
+                    }
+
+                    goToTarget();
+
+                    if (Vector3.Distance(transform.position, positionToAttack) < 1f)
+                    {
+                        ///Debug.Log("Wait to turn");
+                        waitToCurvedC = StartCoroutine(waitToCurvedMouvement());
+                    }
+
+                }
+
+
+
+                break;
+            default:
+                break;
+        }
+    }
+
+
 
     public void ChangeState(States newState)
     {
-        
+
+        signalRecieved = false;
+        berzierMouv = false;
+        StopAllCoroutines();
+        t = 0;
+        patrolC = null;
+        waitToattackC = null;
+        waitToCurvedC = null;
+
         switch (newState)
         {
             case States.Static:
-                //controller.positionToGo = Vector3.zero;
-
+                minDistance = 5f;
                 stayAtPosition();
-                minDistance = 4f;
+
                 break;
+
             case States.ToPosition:
-                signalRecieved = false;
+
+                if (hasAlignement) { hasAlignement = false; }
+                if (hasAttraction) { hasAttraction = false; }
                 minDistance = 2f;
 
 
                 break;
             case States.Patrol:
-                rb.angularVelocity = Vector3.zero;
-                minDistance = 4f;
+                minDistance = 5f;
                 patrol();
+
                 break;
             case States.Attack:
 
+                minDistance = 3.5f;
+
+                if (hasAlignement) { hasAlignement = false; }
+                if (hasAttraction) { hasAttraction = false; }
+                if (hasRepulsion) { hasRepulsion = false; }
+
+                goToTarget();
                 break;
             default:
                 break;
@@ -189,22 +332,17 @@ public class Boid_Controller : MonoBehaviour
         signalRecieved = true;
     }
 
-    private void tellOthersToMove()
-    {
-        foreach (GameObject boid in otherBoids)
-        {
-            boid.GetComponent<Boid_Controller>().goToPosition();
-        }
-    }
 
     public void goToPosition()
     {
-        //if (!hasAlignement) { hasAlignement = true; }
-        //if (!hasAttraction) { hasAttraction = true; }
-
-        //Vector3 pos = new Vector3(controller.positionToGo.x, 0, controller.positionToGo.z);
-
         velocity = (positionToGo - transform.position).normalized;
+
+    }
+
+    public void goToTarget()
+    {
+        rb.angularVelocity = Vector3.zero;
+        velocity = (positionToAttack - transform.position).normalized;
 
     }
     
@@ -218,13 +356,29 @@ public class Boid_Controller : MonoBehaviour
 
     }
 
+
+
+
     private void patrol()
     {
+
+        rb.angularVelocity = Vector3.zero;  
+        velocity = randDir();
+        patrolC = StartCoroutine(waitToActivatePatrol());
+
+
+    }
+
+
+    private IEnumerator waitToActivatePatrol()
+    {
+        yield return new WaitForSeconds(3);
+
         if (!hasAlignement) { hasAlignement = true; }
         if (!hasAttraction) { hasAttraction = true; }
-        if(!hasRepulsion) { hasRepulsion = true; }
-        velocity = randDir();
-
+        if (!hasRepulsion) { hasRepulsion = true; }
+        changeDirElasped = 0;
+        patrolC = null;
     }
     private Vector3 repulsion()
     {
@@ -290,7 +444,63 @@ public class Boid_Controller : MonoBehaviour
 
     }
 
-  
+    private void setControlPoints()
+    {
+     
+        float p1Z = -30;
+        float sign = 1;
+
+        int rand = Random.Range(0, 2);
+
+        if(rand == 1)
+        {
+            sign *= -1;
+        }
+
+      
+
+        P0 = transform.position;
+
+        if (Mathf.Abs(transform.position.x - positionToAttack.x) < 10f)
+        {
+            P1 = new Vector3(transform.position.x + (30* sign), transform.position.y, transform.position.z );
+        }
+        else
+        {
+            P1 = new Vector3(transform.position.x, transform.position.y, transform.position.z + (30 * sign));
+        }
+
+        
+        P2 = positionToAttack;
+    }
+
+    private IEnumerator waitToCurvedMouvement()
+    {
+        yield return new WaitForSeconds(1f);
+        if (!hasAlignement) { hasAlignement = true; }
+        if (!hasRepulsion) { hasRepulsion = true; }
+
+        setControlPoints();
+        berzierMouv = true;
+        rb.angularVelocity = Vector3.zero;
+        velocity = Vector3.zero;
+        waitToCurvedC = null;
+
+    }
+
+    private IEnumerator waitToattack()
+    {
+        yield return new WaitForSeconds(1f);
+
+        rb.angularVelocity = Vector3.zero;
+        velocity = Vector3.zero;
+        setControlPoints();
+        t = 0f;
+
+        waitToattackC = null;
+       
+
+    }
     private void debugPos()
     {
         if (transform.position.x > maxX)
@@ -333,5 +543,20 @@ public class Boid_Controller : MonoBehaviour
         // Draw a yellow sphere at the transform's position
         Gizmos.color = Color.yellow;
         Gizmos.DrawSphere(boidSignalPos, 1f);
+
+        // Draw a yellow sphere at the transform's position
+        Gizmos.color = Color.red;
+        Gizmos.DrawSphere(P0, 1f);
+
+        // Draw a yellow sphere at the transform's position
+        Gizmos.color = Color.blue;
+        Gizmos.DrawSphere(P1, 1f);
+
+        // Draw a yellow sphere at the transform's position
+        Gizmos.color = Color.green;
+        Gizmos.DrawSphere(P2, 1f);
+
+        Gizmos.color = Color.magenta;
+        Gizmos.DrawSphere(positionToAttack, 1f);
     }
 }
