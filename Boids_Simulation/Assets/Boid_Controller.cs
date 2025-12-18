@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.XR;
+using static UnityEngine.GraphicsBuffer;
 using Random = UnityEngine.Random;
 
 public class Boid_Controller : MonoBehaviour
@@ -14,7 +15,8 @@ public class Boid_Controller : MonoBehaviour
         Static,
         ToPosition,
         Patrol,
-        Attack
+        Attack,
+        Boid
     }
 
 
@@ -32,7 +34,7 @@ public class Boid_Controller : MonoBehaviour
     private Coroutine patrolC = null;
 
     [Header("Attack")]
-    private Vector3 positionToAttack = Vector3.zero;
+    public Vector3 positionToAttack = Vector3.zero;
     private Vector3 tempDir = Vector3.zero;
     private Vector3 P0 , P1, P2 ;
     private float t = 0;
@@ -45,6 +47,7 @@ public class Boid_Controller : MonoBehaviour
     public Player_Controller controller;
     public float maxX, maxZ;
     public bool isObstacle = false;
+    public float obstacleStrenght;
 
     [Header("Mouvement")]
     public float speed = 1;
@@ -69,7 +72,7 @@ public class Boid_Controller : MonoBehaviour
     public List<GameObject> otherBoids = new List<GameObject>();
     private bool goToTargetAgain;
 
-
+    private Vector3 dirToLook = Vector3.zero;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -126,7 +129,21 @@ public class Boid_Controller : MonoBehaviour
         if (hasAlignement) { dir += (alignement() * scalaireAlignement) ; }
         if (hasAttraction) { dir += (attraction() * scalaireAttraction ) ; }
 
+        dirToLook = dir;
+
         rb.AddForce(dir.normalized * speed);
+
+
+        if (rb.linearVelocity.sqrMagnitude > 0.01f)
+        {
+            rb.MoveRotation(
+                Quaternion.Slerp(
+                    rb.rotation,
+                    Quaternion.LookRotation(rb.linearVelocity.normalized),
+                    0.2f
+                )
+            );
+        }
 
     }
     // Update is called once per frame
@@ -142,8 +159,8 @@ public class Boid_Controller : MonoBehaviour
 
         //return;
 
-        Vector3 dirToLook = transform.position + velocity;
-        transform.LookAt(dirToLook);
+        /*dirToLook = transform.position + dirToLook;
+        transform.LookAt(dirToLook);*/
 
         stateMachine();
 
@@ -152,11 +169,11 @@ public class Boid_Controller : MonoBehaviour
             ChangeState(States.Patrol);
         }
 
-        if (Input.GetKeyDown(KeyCode.Y))
+        if (Input.GetKeyDown(KeyCode.U))
         {
-            
+
             Debug.Log("pressed Y");
-            ChangeState(States.Attack);
+            ChangeState(States.Boid);
         }
 
 
@@ -226,6 +243,11 @@ public class Boid_Controller : MonoBehaviour
                     if (t < 1f)
                     {
                         transform.position = P1 + Mathf.Pow((1 - t), 2) * (P0 - P1) + Mathf.Pow(t, 2) * (P2 - P1);
+                        Vector3 tangent = 2f * (1f - t) * (P1 - P0) + 2f * t * (P2 - P1);
+                        if (tangent.sqrMagnitude > 0.001f)
+                        {
+                            transform.LookAt(transform.position + tangent);
+                        }
 
                         t = t + berzierSpeed * Time.deltaTime;
 
@@ -288,12 +310,13 @@ public class Boid_Controller : MonoBehaviour
         switch (newState)
         {
             case States.Static:
-                minDistance = 5f;
+                minDistance = 7f;
                 stayAtPosition();
 
                 break;
 
             case States.ToPosition:
+                if (!hasRepulsion) { hasRepulsion = true; }
 
                 if (hasAlignement) { hasAlignement = false; }
                 if (hasAttraction) { hasAttraction = false; }
@@ -302,7 +325,8 @@ public class Boid_Controller : MonoBehaviour
 
                 break;
             case States.Patrol:
-                minDistance = 5f;
+                minDistance = 7f;
+                if (hasRepulsion) { hasRepulsion = true; }
                 patrol();
 
                 break;
@@ -316,6 +340,20 @@ public class Boid_Controller : MonoBehaviour
 
                 goToTarget();
                 break;
+
+            case States.Boid:
+                minDistance = 9f;
+                scalaireRepulsion = 6;
+
+                if (hasAlignement) { hasAlignement = false; }
+                if (hasAttraction) { hasAttraction = false; }
+                if (hasRepulsion) { hasRepulsion = false; }
+
+                rb.angularVelocity = Vector3.zero;
+                velocity = randDir();
+                StartCoroutine(waitToActivateBoid());
+
+                break;
             default:
                 break;
         }
@@ -324,6 +362,16 @@ public class Boid_Controller : MonoBehaviour
 
     }
 
+
+    private IEnumerator waitToActivateBoid()
+    {
+        yield return new WaitForSeconds(1);
+        if (!hasAlignement) { hasAlignement = true; }
+        if (!hasAttraction) { hasAttraction = true; }
+        if (!hasRepulsion) { hasRepulsion = true; }
+        rb.angularVelocity = Vector3.zero;
+        velocity = randDir();
+    }
 
 
     public void stopSignal(Vector3 pos)
@@ -385,11 +433,24 @@ public class Boid_Controller : MonoBehaviour
 
         Vector3 averageDir = Vector3.zero;
         float nbBoids = 0;
+
         foreach (GameObject boid in otherBoids)
         {
-            if(Vector3.Distance(transform.position , boid.transform.position) < minDistance)
+            Vector3 diff = transform.position - boid.transform.position;
+            float dist = diff.magnitude;
+
+            if (dist < minDistance && dist > 0.0001f)
             {
-                averageDir +=  transform.position - boid.transform.position ;
+           
+                float strength = (minDistance - dist) / minDistance;
+   
+
+                if (boid.GetComponent<Boid_Controller>().isObstacle)
+                {
+                    strength *= obstacleStrenght;//  100f; 
+                }
+
+                averageDir += diff.normalized * strength;
                 nbBoids++;
             }
         }
@@ -398,6 +459,7 @@ public class Boid_Controller : MonoBehaviour
         if (nbBoids != 0)
         {
             averageDir /= nbBoids;
+            averageDir = averageDir.normalized;
         }
 
         return averageDir;
@@ -409,6 +471,12 @@ public class Boid_Controller : MonoBehaviour
         Vector3 averageDir = Vector3.zero;
         float nbBoids = 0;
         foreach (GameObject boid in otherBoids) {
+
+            if (boid.GetComponent<Boid_Controller>().isObstacle)
+            {
+                continue;
+            }
+
             averageDir += boid.GetComponent<Rigidbody>().linearVelocity;
             nbBoids++;
         }
@@ -429,6 +497,11 @@ public class Boid_Controller : MonoBehaviour
         float nbBoids = 0;
         foreach (GameObject boid in otherBoids)
         {
+            if (boid.GetComponent<Boid_Controller>().isObstacle)
+            {
+                continue;
+
+            }
             averageDir +=  boid.transform.position;
             nbBoids++;
         }

@@ -31,7 +31,7 @@ public class Player_Controller : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        //cameraMouvement();
+        cameraMouvement();
 
     }
 
@@ -74,6 +74,20 @@ public class Player_Controller : MonoBehaviour
             foreach (GameObject go in allBoids) {
                 go.GetComponent<Boid_Controller>().positionToGo  = new Vector3(pos.x, 0, pos.z); 
                 go.GetComponent<Boid_Controller>().ChangeState(Boid_Controller.States.ToPosition);
+            }
+        }
+
+    }
+
+    public void rightMouseButtonAction(InputAction.CallbackContext context)
+    {
+        if (context.performed)
+        {
+            Vector3 pos = getMouseGamePosition();
+            foreach (GameObject go in allBoids)
+            {
+                go.GetComponent<Boid_Controller>().positionToAttack = new Vector3(pos.x, 0, pos.z);
+                go.GetComponent<Boid_Controller>().ChangeState(Boid_Controller.States.Attack);
             }
         }
     }
