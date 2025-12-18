@@ -1,6 +1,0 @@
-State machine status:
-
-bormbardement : 
-	- scl repulsion : 1
-	- scl alignement : 10
-	- scl attraction : 5
